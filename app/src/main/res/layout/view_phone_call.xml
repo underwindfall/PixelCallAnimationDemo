@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/phone_call_container"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:accessibilityLiveRegion="polite"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:orientation="vertical">
+
+    <Space
+        android:id="@+id/incoming_bouncer_space_holder"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:visibility="visible" />
+
+    <TextView
+        android:id="@+id/incoming_swipe_to_answer_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="18dp"
+        android:focusable="false"
+        android:gravity="center_horizontal"
+        android:text="swipe up to answer"
+        android:textAlignment="center"
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        tools:textColor="@android:color/black" />
+
+    <FrameLayout
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="10dp"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <ImageView
+            android:id="@+id/incoming_call_puck_bg"
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:layout_gravity="center"
+            android:background="@drawable/circular_background"
+            android:contentDescription="@null"
+            android:duplicateParentState="true"
+            android:elevation="8dp"
+            android:focusable="false"
+            android:stateListAnimator="@animator/activated_button_elevation" />
+
+        <ImageView
+            android:id="@+id/incoming_call_puck_icon"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:layout_gravity="center"
+            android:contentDescription="@null"
+            android:elevation="16dp"
+            android:focusable="false"
+            android:outlineProvider="none"
+            android:src="@drawable/ic_baseline_call_24"
+            android:tintMode="src_atop"
+            tools:outlineProvider="background" />
+    </FrameLayout>
+
+
+    <TextView
+        android:id="@+id/incoming_swipe_to_reject_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="20dp"
+        android:layout_marginBottom="20dp"
+        android:alpha="0"
+        android:focusable="false"
+        android:gravity="center_horizontal"
+        android:text="swipe down to reject"
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        tools:alpha="1"
+        tools:textColor="@android:color/black" />
+
+</LinearLayout>
