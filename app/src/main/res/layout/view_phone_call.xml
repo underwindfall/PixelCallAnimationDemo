@@ -30,6 +30,7 @@
         tools:textColor="@android:color/black" />
 
     <FrameLayout
+        android:id="@+id/incoming_call_puck_container"
         android:layout_width="80dp"
         android:layout_height="80dp"
         android:layout_gravity="center_horizontal"
