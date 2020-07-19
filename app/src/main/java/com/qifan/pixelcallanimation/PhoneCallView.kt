@@ -5,7 +5,10 @@ import android.content.Context
 import android.util.AttributeSet
 import android.util.Log
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.AccelerateInterpolator
 import android.view.animation.Interpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import androidx.core.animation.addListener
 import androidx.core.animation.doOnCancel
@@ -23,10 +26,13 @@ import kotlin.properties.Delegates
 
 private const val BOUNCE_ANIMATION_DELAY: Long = 167
 private const val SWIPE_TO_DECLINE_FADE_IN_DELAY_MILLIS: Long = 333
+private const val VIBRATION_TIME_MILLIS: Long = 800
 private const val ANIMATE_DURATION_SHORT_MILLIS: Long = 667
 private const val ANIMATE_DURATION_LONG_MILLIS: Long = 1_500
 private const val ANIMATE_DURATION_NORMAL_MILLIS: Long = 1_333
 private const val HINT_REJECT_FADE_TRANSLATION_Y_DP = -8f
+private const val SHAKE_TRANSLATION_RIGHT = 10f
+private const val SHAKE_TRANSLATION_LEFT = -10f
 
 class PhoneCallView @JvmOverloads constructor(
     context: Context,
@@ -36,6 +42,7 @@ class PhoneCallView @JvmOverloads constructor(
 
     private var lockEntryAnim: AnimatorSet? = null
     private var lockBounceAnim: Animator? = null
+    private var vibrationAnimator: Animator? = null
 
     private var animationState: AnimationState by Delegates.observable(NONE) { property, oldValue, newValue ->
         debug("${property.name} is being changed from $oldValue to $newValue")
@@ -151,8 +158,7 @@ class PhoneCallView @JvmOverloads constructor(
             play(textDown).with(puckDown).with(puckScaleDown).after(puckUp)
             play(rejectTextShow).after(puckUp)
 
-//         TODO Add vibration animation.
-//        addVibrationAnimator(lockEntryAnim);
+            addVibrationAnimator(this)
 
             var canceled = false
             addListener(
@@ -272,8 +278,7 @@ class PhoneCallView @JvmOverloads constructor(
             .with(rejectTextShow)
             .with(rejectTextTranslate)
             .after(puckUp)
-        // TODO Add vibration animation to the animator set.
-//        addVibrationAnimator(breatheAnimation)
+        addVibrationAnimator(breatheAnimation)
         return breatheAnimation
     }
 
@@ -290,6 +295,30 @@ class PhoneCallView @JvmOverloads constructor(
         lockBounceAnim = null
         lockEntryAnim?.cancel()
         lockEntryAnim = null
+    }
+
+    private fun addVibrationAnimator(animatorSet: AnimatorSet) {
+        vibrationAnimator?.end()
+        // animate the value between 0 and 1
+        vibrationAnimator =
+            ObjectAnimator.ofFloat(
+                contactPuckContainer, View.TRANSLATION_X,
+                0f,
+                SHAKE_TRANSLATION_RIGHT,
+                SHAKE_TRANSLATION_LEFT,
+                SHAKE_TRANSLATION_RIGHT,
+                SHAKE_TRANSLATION_LEFT,
+                SHAKE_TRANSLATION_RIGHT,
+                SHAKE_TRANSLATION_LEFT,
+                SHAKE_TRANSLATION_RIGHT,
+                SHAKE_TRANSLATION_LEFT,
+                0f
+            )
+                .apply {
+                    duration = VIBRATION_TIME_MILLIS
+                    interpolator = AccelerateDecelerateInterpolator()
+                }
+        animatorSet.play(vibrationAnimator).after(0/* delay */)
     }
 
     // Create an animator to scale on X/Y directions uniformly.
