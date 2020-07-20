@@ -1,38 +1,52 @@
 package com.qifan.pixelcallanimation
 
-import android.animation.*
+import android.animation.Animator
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.util.AttributeSet
-import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
-import android.view.animation.AccelerateInterpolator
 import android.view.animation.Interpolator
-import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.core.animation.addListener
 import androidx.core.animation.doOnCancel
 import androidx.core.animation.doOnEnd
+import androidx.core.math.MathUtils.clamp
 import androidx.core.view.animation.PathInterpolatorCompat
 import androidx.interpolator.view.animation.FastOutLinearInInterpolator
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import androidx.interpolator.view.animation.LinearOutSlowInInterpolator
 import com.qifan.pixelcallanimation.PhoneCallView.AnimationState.*
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.properties.Delegates
+import kotlinx.android.synthetic.main.view_phone_call.view.incoming_call_puck_bg as contactPuckBackground
+import kotlinx.android.synthetic.main.view_phone_call.view.incoming_call_puck_container as contactPuckContainer
+import kotlinx.android.synthetic.main.view_phone_call.view.incoming_call_puck_icon as contactPuckIcon
 import kotlinx.android.synthetic.main.view_phone_call.view.incoming_swipe_to_answer_text as swipeToAnswerText
 import kotlinx.android.synthetic.main.view_phone_call.view.incoming_swipe_to_reject_text as swipeToRejectText
-import kotlinx.android.synthetic.main.view_phone_call.view.incoming_call_puck_container as contactPuckContainer
-import kotlinx.android.synthetic.main.view_phone_call.view.incoming_call_puck_bg as contactPuckBackground
-import kotlin.properties.Delegates
 
 private const val BOUNCE_ANIMATION_DELAY: Long = 167
 private const val SWIPE_TO_DECLINE_FADE_IN_DELAY_MILLIS: Long = 333
-private const val VIBRATION_TIME_MILLIS: Long = 800
+private const val VIBRATION_TIME_MILLIS: Long = 500
 private const val ANIMATE_DURATION_SHORT_MILLIS: Long = 667
 private const val ANIMATE_DURATION_LONG_MILLIS: Long = 1_500
 private const val ANIMATE_DURATION_NORMAL_MILLIS: Long = 1_333
 private const val HINT_REJECT_FADE_TRANSLATION_Y_DP = -8f
 private const val SHAKE_TRANSLATION_RIGHT = 10f
 private const val SHAKE_TRANSLATION_LEFT = -10f
+private const val SETTLE_ANIMATION_DURATION_MILLIS: Long = 100
+
+private const val SWIPE_LERP_PROGRESS_FACTOR = 0.5f
+private const val SWIPE_TO_ANSWER_MAX_TRANSLATION_Y_DP = 90f
+private const val SWIPE_TO_REJECT_MAX_TRANSLATION_Y_DP = 90f
 
 class PhoneCallView @JvmOverloads constructor(
     context: Context,
@@ -41,6 +55,7 @@ class PhoneCallView @JvmOverloads constructor(
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
     private var lockEntryAnim: AnimatorSet? = null
+    private var lockSettleAnim: AnimatorSet? = null
     private var lockBounceAnim: Animator? = null
     private var vibrationAnimator: Animator? = null
 
@@ -48,6 +63,11 @@ class PhoneCallView @JvmOverloads constructor(
         debug("${property.name} is being changed from $oldValue to $newValue")
         updateAnimationState(oldValue, newValue)
     }
+
+
+    private var downY = 0f
+    private var offsetY = 0f
+    private var slideProgress = 0f
 
     init {
         View.inflate(context, R.layout.view_phone_call, this)
@@ -65,7 +85,9 @@ class PhoneCallView @JvmOverloads constructor(
         when (newState) {
             ENTRY -> startSwipeToAnswerEntryAnimation()
             BOUNCE -> startSwipeToAnswerBounceAnimation()
-            COMPLETED -> endAnimation()
+            SWIPE -> startSwipeToAnswerSwipeAnimation()
+            SETTLE -> startSwipeToAnswerSettleAnimation()
+            COMPLETED -> clearSwipeToAnswerUi()
             else -> debug("Do nothing")
         }
     }
@@ -183,6 +205,129 @@ class PhoneCallView @JvmOverloads constructor(
         lockBounceAnim?.start()
     }
 
+    private fun startSwipeToAnswerSwipeAnimation() {
+        debug("Swipe answer animation.")
+        resetTouchState()
+        endAnimation()
+    }
+
+    private fun startSwipeToAnswerSettleAnimation() {
+        endAnimation()
+        val puckScale = ObjectAnimator.ofPropertyValuesHolder(
+            contactPuckBackground,
+            PropertyValuesHolder.ofFloat(View.SCALE_X, 1f),
+            PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f)
+        ).apply {
+            duration = SETTLE_ANIMATION_DURATION_MILLIS
+        }
+        val swipeToAnswerTextFade =
+            createFadeAnimation(swipeToAnswerText, 1f, SETTLE_ANIMATION_DURATION_MILLIS)
+        val contactPuckContainerFade =
+            createFadeAnimation(contactPuckContainer, 1f, SETTLE_ANIMATION_DURATION_MILLIS)
+        val contactPuckBackgroundFade =
+            createFadeAnimation(contactPuckBackground, 1f, SETTLE_ANIMATION_DURATION_MILLIS)
+        val contactPuckIconFade =
+            createFadeAnimation(contactPuckIcon, 1f, SETTLE_ANIMATION_DURATION_MILLIS)
+        val contactPuckTranslation = ObjectAnimator.ofPropertyValuesHolder(
+            contactPuckContainer,
+            PropertyValuesHolder.ofFloat(View.TRANSLATION_X, 0f),
+            PropertyValuesHolder.ofFloat(View.TRANSLATION_Y, 0f)
+        ).apply {
+            duration = SETTLE_ANIMATION_DURATION_MILLIS
+        }
+        lockSettleAnim = AnimatorSet()
+        lockSettleAnim?.apply {
+            play(puckScale)
+                .with(swipeToAnswerTextFade)
+                .with(contactPuckContainerFade)
+                .with(contactPuckBackgroundFade)
+                .with(contactPuckIconFade)
+                .with(contactPuckTranslation)
+            addListener(
+                onCancel = { animationState = NONE },
+                onEnd = { animationState = BOUNCE }
+            )
+            start()
+        }
+    }
+
+    private fun createFadeAnimation(
+        target: View,
+        targetAlpha: Float,
+        duration: Long
+    ): ObjectAnimator {
+        return ObjectAnimator.ofFloat(target, View.ALPHA, targetAlpha)
+            .setDuration(duration)
+    }
+
+    private fun updateSwipeTextAndPuckForTouch() {
+        val clampedProgress = clamp(slideProgress, -1f, 1f)
+        debug("updateSwipeTextAndPuckForTouch $clampedProgress")
+        // Cancel view property animators on views we're about to mutate
+        swipeToAnswerText.animate().cancel()
+        contactPuckIcon.animate().cancel()
+
+        // Fade out the "swipe up to answer". It only takes 1 slot to complete the fade.
+        val swipeTextAlpha = max(0f, 1 - abs(clampedProgress))
+        fadeToward(swipeToAnswerText, swipeTextAlpha)
+        // Fade out the "swipe down to dismiss" at the same time. Don't ever increase its alpha
+        fadeToward(swipeToRejectText, min(swipeTextAlpha, swipeToRejectText.alpha))
+        // Move swipe text back to zero.
+        if (slideProgress > 0) {
+            //reject animation
+            moveTowardY(
+                contactPuckContainer,
+                clampedProgress * context.dpToPx(SWIPE_TO_ANSWER_MAX_TRANSLATION_Y_DP)
+            )
+        } else {
+            //answer animation
+            moveTowardY(
+                contactPuckContainer,
+                clampedProgress * context.dpToPx(SWIPE_TO_REJECT_MAX_TRANSLATION_Y_DP)
+            )
+        }
+
+    }
+
+    private fun moveTowardY(view: View, newY: Float) {
+        val newTransY = view.translationY + (newY - view.translationY) * SWIPE_LERP_PROGRESS_FACTOR
+        view.translationY = newTransY
+    }
+
+    private fun fadeToward(view: View, newAlpha: Float) {
+        val lastAlpha = view.alpha + (newAlpha - view.alpha) * SWIPE_LERP_PROGRESS_FACTOR
+        view.alpha = lastAlpha
+    }
+
+    private fun clearSwipeToAnswerUi() {
+        debug("clear Swipe Animation")
+        endAnimation()
+        swipeToAnswerText.visibility = View.GONE
+        contactPuckContainer.visibility = View.GONE
+    }
+
+    private fun resetTouchState() {
+        contactPuckContainer.animate()
+            .scaleX(1f /* scaleX */)
+            .scaleY(1f /*scaleY*/)
+        contactPuckBackground.animate()
+            .scaleX(1f /* scaleX */)
+            .scaleY(1f /*scaleY*/)
+        contactPuckBackground.apply {
+            backgroundTintList = null
+        }
+        contactPuckIcon.apply {
+            backgroundTintList = ColorStateList.valueOf(Color.WHITE)
+        }
+        contactPuckIcon.animate().rotation(0f)
+
+        swipeToAnswerText.animate().alpha(1f)
+        swipeToAnswerText.animate().alpha(1f)
+        contactPuckContainer.animate().alpha(1f)
+        contactPuckBackground.animate().alpha(1f)
+        contactPuckIcon.animate().alpha(1f)
+    }
+
     private fun createBreatheAnimation(): Animator {
         val breatheAnimation = AnimatorSet()
         val textOffset = context.dpToPx(42f/* dp */)
@@ -291,6 +436,8 @@ class PhoneCallView @JvmOverloads constructor(
 
     private fun endAnimation() {
         debug("Clear all animations")
+        lockSettleAnim?.cancel()
+        lockSettleAnim = null
         lockBounceAnim?.cancel()
         lockBounceAnim = null
         lockEntryAnim?.cancel()
@@ -350,6 +497,50 @@ class PhoneCallView @JvmOverloads constructor(
         endAnimation()
     }
 
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downY = event.y
+                animationState = SWIPE
+                slideProgress = 0f
+            }
+            MotionEvent.ACTION_MOVE -> {
+                offsetY = event.y - downY
+                slideProgress = offsetY / (height * 0.5f)
+                updateSwipeTextAndPuckForTouch()
+                debug("Action move offsetY $slideProgress")
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (abs(offsetY) >= height * 0.5) {
+                    if (offsetY > 0) {
+                        performReject()
+                    } else {
+                        performAnswer()
+                    }
+                    animationState = COMPLETED
+                } else {
+                    resetTouchState()
+                    slideProgress = 0f
+                    animationState = SETTLE
+                }
+            }
+        }
+        return true
+    }
+
+    private fun performReject() {
+        toast("Perform Rejecting phone call")
+    }
+
+    private fun performAnswer() {
+        toast("Perform Answering phone call")
+    }
+
+
+    private fun toast(string: String) {
+        Toast.makeText(context, string, Toast.LENGTH_LONG).show()
+    }
+
 
     private enum class AnimationState {
         NONE,
@@ -363,11 +554,8 @@ class PhoneCallView @JvmOverloads constructor(
         // A special state in which text and icon follows the finger movement
         SWIPE,
 
-        // A short animation to reset from swipe and prepare for hint or bounce
+        // A short animation to reset from swipe and prepare for  bounce
         SETTLE,
-
-        // Jump animation to suggest what to do
-        HINT,
 
         // Animation loop completed. Occurs after user swipes beyond threshold
         COMPLETED;
