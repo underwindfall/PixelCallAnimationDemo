@@ -7,6 +7,7 @@ import android.animation.PropertyValuesHolder
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.PorterDuff
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
@@ -14,9 +15,10 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.Interpolator
 import android.widget.FrameLayout
 import android.widget.Toast
+import androidx.annotation.FloatRange
 import androidx.core.animation.addListener
-import androidx.core.animation.doOnCancel
 import androidx.core.animation.doOnEnd
+import androidx.core.graphics.ColorUtils
 import androidx.core.math.MathUtils.clamp
 import androidx.core.view.animation.PathInterpolatorCompat
 import androidx.interpolator.view.animation.FastOutLinearInInterpolator
@@ -67,6 +69,8 @@ class PhoneCallView @JvmOverloads constructor(
 
     private var downY = 0f
     private var offsetY = 0f
+
+    @FloatRange(from = -1.00, to = 1.00)
     private var slideProgress = 0f
 
     init {
@@ -263,6 +267,7 @@ class PhoneCallView @JvmOverloads constructor(
     private fun updateSwipeTextAndPuckForTouch() {
         val clampedProgress = clamp(slideProgress, -1f, 1f)
         debug("updateSwipeTextAndPuckForTouch $clampedProgress")
+        val positiveAdjustedProgress: Float = abs(clampedProgress)
         // Cancel view property animators on views we're about to mutate
         swipeToAnswerText.animate().cancel()
         contactPuckIcon.animate().cancel()
@@ -272,6 +277,17 @@ class PhoneCallView @JvmOverloads constructor(
         fadeToward(swipeToAnswerText, swipeTextAlpha)
         // Fade out the "swipe down to dismiss" at the same time. Don't ever increase its alpha
         fadeToward(swipeToRejectText, min(swipeTextAlpha, swipeToRejectText.alpha))
+
+        // Animate puck color
+        val destPuckColor = if (slideProgress > 0) Color.RED else Color.GREEN
+        contactPuckBackground.backgroundTintList = ColorStateList.valueOf(destPuckColor)
+        contactPuckBackground.backgroundTintMode = PorterDuff.Mode.SRC_ATOP
+        contactPuckBackground.setColorFilter(destPuckColor)
+
+        val iconProcess = min(1f, positiveAdjustedProgress * 4)
+        val iconColor = ColorUtils.setAlphaComponent(Color.WHITE, 0XFF * (1 - iconProcess).toInt())
+        contactPuckIcon.imageTintList = ColorStateList.valueOf(iconColor)
+
         // Move swipe text back to zero.
         if (slideProgress > 0) {
             //reject animation
@@ -326,6 +342,9 @@ class PhoneCallView @JvmOverloads constructor(
         contactPuckContainer.animate().alpha(1f)
         contactPuckBackground.animate().alpha(1f)
         contactPuckIcon.animate().alpha(1f)
+        contactPuckIcon.imageTintList = ColorStateList.valueOf(Color.GREEN)
+        contactPuckBackground.imageTintList = null
+        contactPuckBackground.colorFilter = null
     }
 
     private fun createBreatheAnimation(): Animator {
@@ -442,6 +461,8 @@ class PhoneCallView @JvmOverloads constructor(
         lockBounceAnim = null
         lockEntryAnim?.cancel()
         lockEntryAnim = null
+        vibrationAnimator?.cancel()
+        vibrationAnimator = null
     }
 
     private fun addVibrationAnimator(animatorSet: AnimatorSet) {
